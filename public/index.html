@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Messaging App</title>
+  <style>
+    #messages {
+      border: 1px solid #ccc;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+    }
+    #messageForm input{
+        width: 100%;
+    }
+    .container{
+        width: 900px;
+        max-width: 100%;
+        margin: auto;
+    }
+  </style>
+</head>
+<body>
+    <div class="container">
+        <h1>onion.23.net.pl</h1>
+        <div id="messages">
+            <!-- Messages will be displayed here -->
+        </div>
+        <form id="messageForm" method="POST" action="/send-message">
+            <table>
+                <tr>
+                    <td>Nickname</td>
+                    <td>
+                        <input type="text" id="nick" name="nick" required>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Message</td>
+                    <td>
+                        <input id="message" name="message" required>
+                    </td>
+                </tr>
+            </table>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+
+
+  <script>
+    // Open WebSocket connection to the server
+    const socket = new WebSocket(`ws://${window.location.host}`);
+
+    // When a new message is received through the WebSocket, update the messages div
+    socket.onmessage = function (event) {
+      const messageContainer = document.getElementById('messages');
+      messageContainer.innerText += event.data;
+      messageContainer.scrollTop = messageContainer.scrollHeight; // Auto-scroll to the latest message
+    };
+
+    // Function to load and display previous messages
+    async function loadMessages() {
+      const response = await fetch('/messages');
+      const messages = await response.text();
+      document.getElementById('messages').innerText = messages;
+    }
+
+    // Load existing messages when the page loads
+    loadMessages();
+
+    // Send message via AJAX and WebSocket
+    document.getElementById('messageForm').onsubmit = async function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(this);
+      const response = await fetch('/send-message', {
+        method: 'POST',
+        body: new URLSearchParams(formData)
+      });
+
+      if (response.ok) {
+        document.getElementById('messageForm').reset();
+      } else {
+        alert('Error sending message.');
+      }
+    };
+  </script>
+</body>
+</html>
