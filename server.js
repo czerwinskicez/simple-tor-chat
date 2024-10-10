@@ -5,7 +5,7 @@ const http = require('http');
 const WebSocket = require('ws');
 
 const app = express();
-const port = 3000;
+const port = 3023;
 
 // Create HTTP server for Express
 const server = http.createServer(app);
@@ -29,7 +29,7 @@ function broadcastMessage(message) {
 app.post('/send-message', (req, res) => {
   const { nick, message } = req.body;
   const filePath = path.join(__dirname, 'messages.txt');
-  const logMessage = `[${new Date().toLocaleString()}] ${nick}: ${message}\n`;
+  const logMessage = `<tr><td class='👤'>${nick}</td><td class='✉️'>${message}</td><td class='📅'>${new Date().toLocaleString()}</td></tr>\n`;
 
   // Append message to the file
   fs.appendFile(filePath, logMessage, (err) => {

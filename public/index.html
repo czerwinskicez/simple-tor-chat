@@ -3,74 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Messaging App</title>
+  <link rel="shortcut icon" href="img/favico.png" type="image/x-icon">
+  <title>onion.23.net.pl</title>
   <style>
-    #messages {
-      border: 1px solid #ccc;
-      padding: 10px;
-      height: 200px;
-      overflow-y: auto;
-      background-color: #f9f9f9;
+    body{
+        background-image: url('img/bg.jpg');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
     }
-    #messageForm input{
-        width: 100%;
+    .messagesTable thead{
+        font-weight: bold;
     }
-    .container{
-        width: 900px;
-        max-width: 100%;
-        margin: auto;
+    .📅{
+        display: none;
     }
   </style>
+  <link rel="stylesheet" href="css/materialize.css">
 </head>
 <body>
+    <nav>
+        <div class="nav-wrapper">
+            <div class="container">
+              
+              <label>
+                <input type="checkbox" id="soundNotification"/>
+                <span>&nbsp;</span>
+              </label>
+              <a href="#" class="brand-logo right">32teNoinO</a>
+            </div>
+        </div>
+    </nav>
     <div class="container">
-        <h1>onion.23.net.pl</h1>
-        <div id="messages">
-            <!-- Messages will be displayed here -->
+        <div class="card-panel grey darken-3 white-text">
+            <table class="messagesTable">
+                <thead><tr class="👤"><td>Nickname</td><td class="✉️">Message</td><td class="📅">Time</td></tr></thead>
+                <tbody></tbody>
+            </table>
         </div>
         <form id="messageForm" method="POST" action="/send-message">
-            <table>
-                <tr>
-                    <td>Nickname</td>
-                    <td>
-                        <input type="text" id="nick" name="nick" required>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Message</td>
-                    <td>
-                        <input id="message" name="message" required>
-                    </td>
-                </tr>
-            </table>
-            <button type="submit">Send</button>
+            <div class="card-panel grey darken-3 white-text">
+                <div class="row">
+                    <div class="input-field col s12 m3">
+                        <input class="white-text" type="text" id="nick" name="nick" required>
+                        <label for="nick">Nickname</label>
+                    </div>
+                    <div class="input-field col s12 m9">
+                        <input class="white-text" type="text" id="message" name="message" required>
+                        <label for="message">Message</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn black-text waves" style="margin-left: auto; display: flex;">Submit</button>
+            </div>
         </form>
     </div>
 
 
-
+  <script src="js/materialize.min.js"></script>
   <script>
-    // Open WebSocket connection to the server
     const socket = new WebSocket(`ws://${window.location.host}`);
 
-    // When a new message is received through the WebSocket, update the messages div
     socket.onmessage = function (event) {
-      const messageContainer = document.getElementById('messages');
-      messageContainer.innerText += event.data;
-      messageContainer.scrollTop = messageContainer.scrollHeight; // Auto-scroll to the latest message
+    document.querySelectorAll(".messagesTable tbody").forEach(messagesBodyElement=>{
+      messagesBodyElement.innerHTML += event.data;
+      // messagesBodyElement.scrollTop = messageContainer.scrollHeight; // Auto-scroll to the latest message
+
+      // Check if the sound notifications checkbox is selected
+      if (document.getElementById('soundNotification').checked) {
+          // Play a sound notification (Make sure to have a sound file available)
+          const audio = new Audio('videoplayback.mp3'); // Update this path to your sound file
+          audio.play();
+      }
+    });
     };
 
-    // Function to load and display previous messages
     async function loadMessages() {
       const response = await fetch('/messages');
       const messages = await response.text();
-      document.getElementById('messages').innerText = messages;
+      document.querySelectorAll(".messagesTable tbody").forEach(messagesBodyElement=>{
+        messagesBodyElement.innerHTML = messages;
+    });
     }
 
-    // Load existing messages when the page loads
     loadMessages();
 
-    // Send message via AJAX and WebSocket
     document.getElementById('messageForm').onsubmit = async function (e) {
       e.preventDefault();
 
