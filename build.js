@@ -61,7 +61,7 @@ async function minifyFile(inputPath, outputPath) {
 
     // Minify HTML
     console.log(`Minifying HTML for ${path.basename(inputPath)}...`);
-    const minifiedHtml = htmlMinify(processedHtml, {
+    const minifiedHtml = await htmlMinify(processedHtml, {
         collapseWhitespace: true,
         removeComments: true,
         removeRedundantAttributes: true,

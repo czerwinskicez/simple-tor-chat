@@ -1,33 +1,49 @@
 # Very Simple Chat
 
-A robust, real-time messaging application built with Node.js, Express, and WebSockets. It features a clean, modern dark-mode interface, persistent message storage in a SQLite database, and includes admin functionality for message moderation.
+A real-time messaging application designed for privacy, accessible via the Tor network. It's built with Node.js, Express, and WebSockets, featuring a persistent SQLite database and a separate public-facing page with Tor access information.
+
+## Architecture Overview
+
+The project consists of two distinct Node.js servers running within a single process:
+
+1.  **Chat Server**: The core real-time chat application, accessible exclusively through a Tor hidden service (`.onion` address). It handles WebSocket connections, message storage, and admin functionalities.
+2.  **Info Server**: A simple, public-facing web server that displays a page with information on how to access the chat via the Tor network. It provides the `.onion` link dynamically from environment variables.
+
+A build process is in place to minify frontend assets (HTML, CSS, JS) from the `private/` directory and output them to the `public/` directory, which is then served by the applications.
 
 ## Features
 
-- **Real-time Messaging**: Instant message delivery using WebSockets.
-- **Persistent & Reliable Storage**: Messages are stored in a SQLite database, ensuring data integrity and reliability.
-- **Modern UI**: A clean, dark-themed, and responsive user interface built with vanilla HTML, CSS, and JavaScript.
-- **Nickname Persistence**: The user's nickname is saved in the browser's `localStorage` for convenience.
-- **Admin Message Deletion**: Users with a valid admin key can delete messages directly from the UI. The action is broadcasted in real-time to all clients.
-- **Emoji Sanitization**: Emojis are automatically removed from nicknames and messages before being stored.
+- **Tor-Exclusive Chat**: The main chat is designed to be accessed only as a Tor hidden service, enhancing user privacy.
+- **Real-time Messaging**: Instant message delivery using WebSockets (`ws`).
+- **Persistent Storage**: Messages are stored in a local SQLite database.
+- **Admin Moderation**: Admins can delete messages in real-time using a special URL parameter.
+- **Build Process**: Frontend assets are minified for production using `html-minifier-terser`, `terser`, and `clean-css`.
+- **Automated Deployment**: An `update.sh` script automates the deployment process on the server (fetching updates, installing dependencies, building, and reloading the app with PM2).
 
 ## Tech Stack
 
 - **Backend**: Node.js, Express.js, WebSocket (`ws`), SQLite3
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript
-- **Configuration**: `dotenv` for environment variables.
+- **Frontend**: Vanilla HTML, CSS, and JavaScript
+- **Build Tools**: `html-minifier-terser`, `terser`, `clean-css`
+- **Environment**: `dotenv` for configuration management.
 
 ## Project Structure
+
 ```
 .
-├── public/
-│   └── index.html      # Frontend logic and UI
+├── private/            # Source frontend files (unminified)
+│   ├── index.html
+│   └── info.html
+├── public/             # Built/minified frontend files
+│   ├── index.html
+│   └── info.html
 ├── database.sqlite     # SQLite database file
-├── .env.example        # Example environment file
-├── .gitignore          # Git ignore file
+├── .env                # Environment variables (not versioned)
+├── build.js            # Build script for minifying assets
+├── server.js           # Main server logic for both apps
+├── update.sh           # Deployment script for the server
 ├── package.json
-├── README.md
-└── server.js           # Main server logic
+└── README.md
 ```
 
 ## Installation and Setup
@@ -45,34 +61,53 @@ A robust, real-time messaging application built with Node.js, Express, and WebSo
 
 ## Configuration
 
-1.  **Create a `.env` file** in the root directory by copying the example:
-    ```bash
-    cp .env.example .env
-    ```
+1.  Create a `.env` file in the root directory.
 
-2.  **Add your admin keys** to the `.env` file. Keys should be a comma-separated string without any spaces.
+2.  Add the required environment variables to the `.env` file:
 
-    **.env file contents:**
     ```env
+    # Port for the chat server (Tor hidden service)
+    CHAT_PORT=3000
+
+    # Port for the public info page
+    INFO_PORT=3330
+
+    # The .onion address of your chat service
+    ONION_LINK=youronionaddress.onion
+
     # Comma-separated list of keys for admin privileges
-    ADMIN_KEYS=secretkey1,admin123,anotherkey
-    
-    # Optional port setting, defaults to 3000
-    # PORT=8080
+    ADMIN_KEYS=secretkey1,admin123
     ```
-    
-3.  Ensure `database.sqlite` is writable by the application. The server will automatically create and initialize the database on first run.
 
 ## Usage
 
-1.  **Start the server:**
-    ```bash
-    npm start
-    ```
+### Development
 
-2.  **Open the application** in your browser at `http://localhost:3000` (or the port you specified in `.env`).
+To run the application in a development environment (with automatic building):
 
-3.  **To use admin features:**
-    -   Access the application with an admin key as a URL parameter.
-    -   Example: `http://localhost:3000?adminkey=secretkey1`
-    -   If the key is valid, a "Delete" button will appear next to each message.
+```bash
+npm run dev
+```
+
+This will first build the assets and then start the server.
+
+- The chat will be available at `http://localhost:3000` (or your `CHAT_PORT`).
+- The info page will be available at `http://localhost:3330` (or your `INFO_PORT`).
+
+### Production & Deployment
+
+The `update.sh` script is designed to automate deployment on a production server. It performs the following steps:
+1.  Navigates to the application directory.
+2.  Pulls the latest changes from the `origin/master` branch.
+3.  Installs dependencies with `npm install`.
+4.  Builds the frontend assets using `npm run build`.
+5.  Reloads the application using PM2 (`pm2 reload tor-hidden-chat`).
+6.  Cleans up untracked files.
+
+To use it, ensure you have PM2 installed and the application is already running under the name `tor-hidden-chat`.
+
+### Admin Features
+
+To access admin features (message deletion), append the `adminkey` query parameter to the chat URL with a valid key from your `.env` file.
+
+Example: `http://youronionaddress.onion?adminkey=secretkey1`
