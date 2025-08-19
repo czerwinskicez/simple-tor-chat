@@ -111,6 +111,10 @@ app.get('/messages', (req, res) => {
 // Info app - simple page with onion link
 const fs = require('fs');
 
+infoApp.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
 infoApp.get('/', (req, res) => {
     const onionLink = process.env.ONION_LINK;
     const infoHtmlPath = path.join(__dirname, 'public', 'info.html');
