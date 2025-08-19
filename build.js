@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { minify: htmlMinify } = require('html-minifier');
+const { minify: htmlMinify } = require('html-minifier-terser');
 const CleanCSS = require('clean-css');
 const terser = require('terser');
 
