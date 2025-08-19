@@ -11,6 +11,9 @@ git reset --hard origin/master
 echo "Updating dependencies."
 npm install
 
+echo "Building application."
+npm run build
+
 echo "Reloading application."
 pm2 reload tor-hidden-chat
 
@@ -18,4 +21,4 @@ echo "Cleaning up."
 git clean -fd
 
 echo ""
-echo "Update completed successfully!"
+echo "Update completed successfully."

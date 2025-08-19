@@ -27,6 +27,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// Serve the built files from public directory
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json()); // Middleware to parse JSON bodies
