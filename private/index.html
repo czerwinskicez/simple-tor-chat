@@ -84,6 +84,7 @@
             align-items: center;
             padding: 2px 0;
             gap: 8px;
+            flex-wrap: wrap;
         }
 
         .mt {
@@ -181,6 +182,20 @@
         .fab:hover {
             background-color: #444;
         }
+
+        .date-separator {
+            width: 100%;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            line-height: 0.1em;
+            margin: 20px 0;
+            color: #888;
+        }
+
+        .date-separator span {
+            background-color: var(--surface-color);
+            padding: 0 10px;
+        }
     </style>
 </head>
 <body>
@@ -256,12 +271,32 @@
         if (data.type === 'delete') {
             const messageEl = document.getElementById(`m-${data.id}`);
             if (messageEl) {
+                // Check for orphaned date separator
+                const prevSibling = messageEl.previousElementSibling;
+                const nextSibling = messageEl.nextElementSibling;
                 messageEl.remove();
+
+                if (prevSibling && prevSibling.classList.contains('date-separator')) {
+                    if (!nextSibling || nextSibling.classList.contains('date-separator')) {
+                        prevSibling.remove();
+                    }
+                }
             }
             return;
         }
         
         const messagesContainer = document.getElementById('mg');
+        
+        // Check if date separator is needed
+        const lastMessage = messagesContainer.querySelector('.mc:last-child');
+        const lastDate = lastMessage ? new Date(parseInt(lastMessage.dataset.timestamp)).toDateString() : null;
+        const newDate = new Date(data.timestamp).toDateString();
+
+        if (newDate !== lastDate) {
+            const separator = createDateSeparator(newDate);
+            messagesContainer.appendChild(separator);
+        }
+
         const formattedMessage = formatMessage(data);
         if (formattedMessage) {
             messagesContainer.appendChild(formattedMessage);
@@ -284,10 +319,11 @@
         const messageDiv = document.createElement('div');
         messageDiv.className = 'mc';
         messageDiv.id = `m-${msg.id}`;
+        messageDiv.dataset.timestamp = new Date(msg.timestamp).getTime();
 
         // Create timestamp span
         const timestampSpan = document.createElement('span');
-        timestampSpan.textContent = new Date(msg.timestamp).toISOString();
+        timestampSpan.textContent = new Date(msg.timestamp).toLocaleTimeString();
         timestampSpan.className = 'mt';
         messageDiv.appendChild(timestampSpan);
         
@@ -326,13 +362,32 @@
         const messagesContainer = document.getElementById('mg');
         messagesContainer.innerHTML = ''; // Clear existing messages
       
+        let lastDate = null;
         messages.forEach(msg => {
+            const messageDate = new Date(msg.timestamp).toDateString();
+            if (messageDate !== lastDate) {
+                const separator = createDateSeparator(messageDate);
+                messagesContainer.appendChild(separator);
+                lastDate = messageDate;
+            }
+
             const formattedMessage = formatMessage(msg);
             if(formattedMessage) {
                 messagesContainer.appendChild(formattedMessage);
             }
         });
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function createDateSeparator(dateString) {
+        const separatorDiv = document.createElement('div');
+        separatorDiv.className = 'date-separator';
+        
+        const span = document.createElement('span');
+        span.textContent = dateString;
+        
+        separatorDiv.appendChild(span);
+        return separatorDiv;
     }
 
     async function deleteMessage(messageId) {
