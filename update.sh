@@ -12,7 +12,7 @@ echo "Updating dependencies."
 npm install
 
 echo "Reloading application."
-pm2 reload server
+pm2 reload tor-hidden-chat
 
 echo "Cleaning up."
 git clean -fd
