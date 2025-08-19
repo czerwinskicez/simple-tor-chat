@@ -1,87 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Messaging App</title>
-  <style>
-    #messages {
-      border: 1px solid #ccc;
-      padding: 10px;
-      height: 200px;
-      overflow-y: auto;
-      background-color: #f9f9f9;
-    }
-    #messageForm input{
-        width: 100%;
-    }
-    .container{
-        width: 900px;
-        max-width: 100%;
-        margin: auto;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Messaging App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --background-color: #121212;
+            --surface-color: #1E1E1E;
+            --on-background-color: #FFFFFF;
+            --on-surface-color: #FFFFFF;
+            --border-color: #2c2c2c;
+        }
+
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            background-color: var(--background-color);
+            color: var(--on-background-color);
+            margin: 0;
+        }
+
+        .top-bar {
+            background-color: var(--surface-color);
+            padding: 10px 20px;
+            font-size: 1.5em;
+            font-weight: 500;
+            border-bottom: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 900px;
+            margin: 20px auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #messages {
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            height: 60vh;
+            overflow-y: auto;
+            background-color: var(--surface-color);
+            margin-bottom: 20px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+
+        .message-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 0;
+        }
+
+        .delete-btn {
+            background: #555;
+            color: white;
+            border: none;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .delete-btn:hover {
+            background: #777;
+        }
+
+        #messageForm {
+            display: flex;
+            gap: 10px;
+        }
+
+        #messageForm input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background-color: var(--surface-color);
+            color: var(--on-surface-color);
+            font-size: 1em;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        #messageForm input:focus {
+            border-color: #666;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+        }
+
+        #messageForm input::placeholder {
+            color: #888;
+        }
+        
+        #messageForm input#nick{
+            flex-grow: 0;
+            width: 150px;
+        }
+
+        #messageForm button {
+            padding: 10px 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background-color: #333;
+            color: var(--on-surface-color);
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #messageForm button:hover {
+            background-color: #444;
+        }
+    </style>
 </head>
 <body>
+    <div class="top-bar">
+        onion.23.net.pl
+    </div>
     <div class="container">
-        <h1>onion.23.net.pl</h1>
         <div id="messages">
             <!-- Messages will be displayed here -->
         </div>
         <form id="messageForm" method="POST" action="/send-message">
-            <table>
-                <tr>
-                    <td>Nickname</td>
-                    <td>
-                        <input type="text" id="nick" name="nick" required>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Message</td>
-                    <td>
-                        <input id="message" name="message" required>
-                    </td>
-                </tr>
-            </table>
+            <input type="text" id="nick" name="nick" required placeholder="Nickname">
+            <input id="message" name="message" required placeholder="Type your message...">
             <button type="submit">Send</button>
         </form>
     </div>
 
-
-
-  <script>
+    <script>
     // Open WebSocket connection to the server
     const socket = new WebSocket(`ws://${window.location.host}`);
 
     // When a new message is received through the WebSocket, update the messages div
     socket.onmessage = function (event) {
-      const messageContainer = document.getElementById('messages');
-      messageContainer.innerText += event.data;
-      messageContainer.scrollTop = messageContainer.scrollHeight; // Auto-scroll to the latest message
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'delete') {
+            const messageEl = document.getElementById(`message-${data.id}`);
+            if (messageEl) {
+                messageEl.remove();
+            }
+            return;
+        }
+        
+        const messagesContainer = document.getElementById('messages');
+        const formattedMessage = formatMessage(data);
+        if (formattedMessage) {
+            messagesContainer.appendChild(formattedMessage);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     };
+
+    function formatMessage(msg) {
+        if (!msg) return null;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const isAdmin = urlParams.has('adminkey');
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message-container';
+        messageDiv.id = `message-${msg.id}`;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = `[${new Date(msg.timestamp).toLocaleString()}] ${msg.nickname}: ${msg.message}`;
+        messageDiv.appendChild(textSpan);
+
+        if (isAdmin) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.onclick = () => deleteMessage(msg.id);
+            messageDiv.appendChild(deleteBtn);
+        }
+        return messageDiv;
+    }
 
     // Function to load and display previous messages
     async function loadMessages() {
-      const response = await fetch('/messages');
-      const messages = await response.text();
-      document.getElementById('messages').innerText = messages;
+        const response = await fetch('/messages');
+        const messages = await response.json();
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = ''; // Clear existing messages
+      
+        messages.forEach(msg => {
+            const formattedMessage = formatMessage(msg);
+            if(formattedMessage) {
+                messagesContainer.appendChild(formattedMessage);
+            }
+        });
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    async function deleteMessage(messageId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const adminkey = urlParams.get('adminkey');
+        if (!adminkey) return;
+
+        await fetch('/delete-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ messageId, adminkey })
+        });
     }
 
     // Load existing messages when the page loads
     loadMessages();
 
+    // Load nickname from localStorage
+    const savedNick = localStorage.getItem('chat_nick');
+    if (savedNick) {
+      document.getElementById('nick').value = savedNick;
+    }
+
     // Send message via AJAX and WebSocket
     document.getElementById('messageForm').onsubmit = async function (e) {
       e.preventDefault();
 
-      const formData = new FormData(this);
+      // Save nickname to localStorage
+      const nickInput = document.getElementById('nick');
+      localStorage.setItem('chat_nick', nickInput.value);
+      
+      const messageInput = document.getElementById('message');
+
       const response = await fetch('/send-message', {
         method: 'POST',
-        body: new URLSearchParams(formData)
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ nick: nickInput.value, message: messageInput.value })
       });
 
       if (response.ok) {
-        document.getElementById('messageForm').reset();
+        messageInput.value = '';
       } else {
         alert('Error sending message.');
       }
