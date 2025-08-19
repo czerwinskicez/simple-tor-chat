@@ -6,7 +6,9 @@ const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const infoApp = express();
+const chatPort = process.env.CHAT_PORT || 3000;
+const infoPort = process.env.INFO_PORT || 3330;
 
 // Set up SQLite database
 const dbPath = path.join(__dirname, 'database.sqlite');
@@ -106,7 +108,30 @@ app.get('/messages', (req, res) => {
     });
 });
 
-// Start the server
-server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+// Info app - simple page with onion link
+const fs = require('fs');
+
+infoApp.get('/', (req, res) => {
+    const onionLink = process.env.ONION_LINK;
+    const infoHtmlPath = path.join(__dirname, 'public', 'info.html');
+    
+    fs.readFile(infoHtmlPath, 'utf8', (err, data) => {
+        if (err) {
+            console.error('Error reading info.html:', err);
+            return res.status(500).send('Error loading page');
+        }
+        
+        // Replace placeholder with actual onion link
+        const html = data.replace(/\{\{ONION_LINK\}\}/g, onionLink);
+        res.send(html);
+    });
+});
+
+// Start both servers
+server.listen(chatPort, () => {
+  console.log(`Chat server running on http://localhost:${chatPort}`);
+});
+
+infoApp.listen(infoPort, () => {
+  console.log(`Info server running on http://localhost:${infoPort}`);
 });
