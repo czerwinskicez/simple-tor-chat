@@ -5,16 +5,9 @@ const { minify: htmlMinify } = require('html-minifier');
 const CleanCSS = require('clean-css');
 const terser = require('terser');
 
-async function build() {
-    // Ensure public directory exists
-    const publicDir = path.join(__dirname, 'public');
-    if (!fs.existsSync(publicDir)) {
-        fs.mkdirSync(publicDir, { recursive: true });
-    }
-
+async function minifyFile(inputPath, outputPath) {
     // Read the private HTML file
-    const privateHtmlPath = path.join(__dirname, 'private', 'index.html');
-    const htmlContent = fs.readFileSync(privateHtmlPath, 'utf8');
+    const htmlContent = fs.readFileSync(inputPath, 'utf8');
 
     // Extract JavaScript from HTML
     const jsRegex = /<script>([\s\S]*?)<\/script>/g;
@@ -33,7 +26,7 @@ async function build() {
     }
 
     // Minify JavaScript with terser
-    console.log('Minifying JavaScript...');
+    console.log(`Minifying JavaScript for ${path.basename(inputPath)}...`);
     const minifiedJsResult = await terser.minify(jsContent, {
         mangle: {
             toplevel: true,
@@ -44,15 +37,14 @@ async function build() {
     });
 
     if (minifiedJsResult.error) {
-        console.error('Terser minification failed:', minifiedJsResult.error);
+        console.error(`Terser minification failed for ${path.basename(inputPath)}:`, minifiedJsResult.error);
         process.exit(1);
     }
 
     const minifiedJs = minifiedJsResult.code;
 
-
     // Minify CSS
-    console.log('Minifying CSS...');
+    console.log(`Minifying CSS for ${path.basename(inputPath)}...`);
     const minifiedCss = new CleanCSS({
         level: 2,
         returnPromise: false
@@ -68,7 +60,7 @@ async function build() {
     processedHtml = processedHtml.replace(cssRegex, `<style>${minifiedCss}</style>`);
 
     // Minify HTML
-    console.log('Minifying HTML...');
+    console.log(`Minifying HTML for ${path.basename(inputPath)}...`);
     const minifiedHtml = htmlMinify(processedHtml, {
         collapseWhitespace: true,
         removeComments: true,
@@ -86,14 +78,32 @@ async function build() {
     });
 
     // Write the processed file to public directory
-    const outputPath = path.join(publicDir, 'index.html');
     fs.writeFileSync(outputPath, minifiedHtml, 'utf8');
 
-    console.log('Build completed successfully!');
+    console.log(`Build for ${path.basename(inputPath)} completed successfully!`);
     console.log(`Original size: ${htmlContent.length} bytes`);
     console.log(`Minified size: ${minifiedHtml.length} bytes`);
     console.log(`Reduction: ${Math.round((1 - minifiedHtml.length / htmlContent.length) * 100)}%`);
     console.log(`Output: ${outputPath}`);
+    console.log('---');
+}
+
+async function build() {
+    // Ensure public directory exists
+    const publicDir = path.join(__dirname, 'public');
+    if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+    }
+
+    const filesToBuild = ['index.html', 'info.html'];
+
+    for (const file of filesToBuild) {
+        const privatePath = path.join(__dirname, 'private', file);
+        const publicPath = path.join(publicDir, file);
+        await minifyFile(privatePath, publicPath);
+    }
+
+    console.log('All builds completed successfully!');
 }
 
 build();
