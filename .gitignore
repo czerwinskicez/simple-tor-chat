@@ -2,3 +2,4 @@ node_modules
 messages.txt
 database.sqlite
 .env
+.onion
