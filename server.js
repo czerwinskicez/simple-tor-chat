@@ -138,9 +138,9 @@ infoApp.get('/', (req, res) => {
 
 // Start both servers
 server.listen(chatPort, '127.0.0.1', () => {
-  console.log(`Chat server listening on 127.0.0.1:${chatPort} (Tor should proxy to this port)`);
+  console.log(`Chat server running on http://localhost:${chatPort}/`);
 });
 
 infoApp.listen(infoPort, () => {
-  console.log(`Info server running on http://localhost:${infoPort}`);
+  console.log(`Info server running on http://localhost:${infoPort}/`);
 });
