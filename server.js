@@ -34,6 +34,13 @@ app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json()); // Middleware to parse JSON bodies
 
+app.use(express.static('public'));
+
+// Serve chat UI (Tor-only service should reverse-proxy to this app)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'private', 'index.html'));
+});
+
 // Function to remove emojis
 function removeEmojis(text) {
     if (typeof text !== 'string') return '';
@@ -110,10 +117,8 @@ app.get('/messages', (req, res) => {
 
 // Info app - simple page with onion link
 const fs = require('fs');
-
-infoApp.get('/favicon.ico', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
-});
+// Serve shared public assets for the info app as well
+infoApp.use(express.static('public'));
 
 infoApp.get('/', (req, res) => {
     const onionLink = process.env.ONION_LINK;
@@ -126,14 +131,14 @@ infoApp.get('/', (req, res) => {
         }
         
         // Replace placeholder with actual onion link
-        const html = data.replace(/\{\{ONION_LINK\}\}/g, onionLink);
+        const html = data.replace(/\{\{ONION_LINK\}\}/g, onionLink || '');
         res.send(html);
     });
 });
 
 // Start both servers
-server.listen(chatPort, () => {
-  console.log(`Chat server running on http://localhost:${chatPort}`);
+server.listen(chatPort, '127.0.0.1', () => {
+  console.log(`Chat server listening on 127.0.0.1:${chatPort} (Tor should proxy to this port)`);
 });
 
 infoApp.listen(infoPort, () => {

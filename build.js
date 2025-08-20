@@ -89,18 +89,24 @@ async function minifyFile(inputPath, outputPath) {
 }
 
 async function build() {
-    // Ensure public directory exists
+    // Ensure output directories exist
     const publicDir = path.join(__dirname, 'public');
+    const torDir = path.join(__dirname, 'private');
     if (!fs.existsSync(publicDir)) {
         fs.mkdirSync(publicDir, { recursive: true });
     }
+    if (!fs.existsSync(torDir)) {
+        fs.mkdirSync(torDir, { recursive: true });
+    }
 
-    const filesToBuild = ['index.html', 'info.html'];
+    // Build chat to tor/, info to public/
+    await minifyFile(path.join(__dirname, 'dev', 'index.html'), path.join(torDir, 'index.html'));
+    await minifyFile(path.join(__dirname, 'dev', 'info.html'), path.join(publicDir, 'info.html'));
 
-    for (const file of filesToBuild) {
-        const privatePath = path.join(__dirname, 'private', file);
-        const publicPath = path.join(publicDir, file);
-        await minifyFile(privatePath, publicPath);
+    // Remove any stale public/index.html if exists
+    const stalePublicIndex = path.join(publicDir, 'index.html');
+    if (fs.existsSync(stalePublicIndex)) {
+        try { fs.unlinkSync(stalePublicIndex); } catch (_) {}
     }
 
     console.log('All builds completed successfully!');

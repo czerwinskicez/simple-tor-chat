@@ -31,16 +31,16 @@ A build process is in place to minify frontend assets (HTML, CSS, JS) from the `
 
 ```
 .
-├── private/            # Source frontend files (unminified)
+├── dev/                # Source frontend files (unminified)
 │   ├── index.html
 │   └── info.html
-├── public/             # Built/minified frontend files
+├── public/             # Built/minified public files (info page, assets)
 │   ├── index.html
 │   └── info.html
 ├── database.sqlite     # SQLite database file
 ├── .env                # Environment variables (not versioned)
-├── build.js            # Build script for minifying assets
-├── server.js           # Main server logic for both apps
+├── build.js            # Build script for minifying assets (builds dev -> public/private)
+├── server.js           # Main server logic for both apps (serves private/index.html at /)
 ├── update.sh           # Deployment script for the server
 ├── package.json
 └── README.md
