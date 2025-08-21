@@ -1,9 +1,11 @@
 #!/bin/bash
-# simple-tor-chat installer
-# Target: clean Ubuntu instance, but idempotent + verbose on any host.
+# simple-tor-chat installer (idempotent)
+# Target: clean Ubuntu instance, but robust on any host.
 # Goal: deploy & start service end-to-end; on failure show what/why; reruns succeed.
 
-# --- Configuration (defaults, can be overridden by flags) ---
+###############################################################################
+#                              CONFIG (DEFAULTS)                              #
+###############################################################################
 CHAT_PORT_DEFAULT="3000"
 INFO_PORT_DEFAULT="3330"
 DOMAIN_DEFAULT=""
@@ -11,7 +13,30 @@ REPO_URL="https://github.com/czerwinskicez/simple-tor-chat.git"
 APP_DIR="/var/www/chat"
 LOG_FILE="/tmp/chat_install.log"
 
-# --- Status Tracking ---
+###############################################################################
+#                                COLOR OUTPUT                                 #
+###############################################################################
+# Disable colors if NO_COLOR is set or output is not a TTY
+if [[ -t 1 && -z "$NO_COLOR" ]]; then
+  C_RESET="\e[0m"; C_DIM="\e[2m"
+  C_RED="\e[31m"; C_GREEN="\e[32m"; C_YELLOW="\e[33m"; C_BLUE="\e[34m"
+  C_MAGENTA="\e[35m"; C_CYAN="\e[36m"; C_BOLD="\e[1m"
+else
+  C_RESET=""; C_DIM=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_BLUE=""
+  C_MAGENTA=""; C_CYAN=""; C_BOLD=""
+fi
+
+say()   { printf "%b%s%b\n" "$1" "$2" "$C_RESET"; }
+info()  { say "$C_CYAN"    "$1"; }
+ok()    { say "$C_GREEN"   "$1"; }
+warn()  { say "$C_YELLOW"  "$1"; }
+err()   { say "$C_RED"     "$1"; }
+head1() { printf "%b\n"    "${C_BOLD}${C_BLUE}== $1 ==${C_RESET}"; }
+head2() { printf "%b\n"    "${C_BOLD}${C_MAGENTA}# $1${C_RESET}"; }
+
+###############################################################################
+#                              STATUS TRACKING                                 #
+###############################################################################
 declare -A STEPS=(
   ["1"]="System Update"
   ["2"]="Install Dependencies"
@@ -27,7 +52,9 @@ declare -A STEPS=(
 declare -A STATUS
 for i in ${!STEPS[@]}; do STATUS[$i]="SKIPPED"; done
 
-# --- User Detection ---
+###############################################################################
+#                              USER DETECTION                                  #
+###############################################################################
 if [ -n "$SUDO_USER" ]; then
   RUN_AS_USER=$SUDO_USER
   USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
@@ -36,25 +63,34 @@ else
   USER_HOME=$HOME
 fi
 
-# --- Helpers ---
+###############################################################################
+#                                   HELP                                       #
+###############################################################################
 usage() {
   cat <<USAGE
-Usage: $0 -a ADMIN_KEYS [-c CHAT_PORT] [-i INFO_PORT] [-d DOMAIN]
-  -a ADMIN_KEYS: Comma-separated admin keys (MANDATORY)
-  -c CHAT_PORT : Chat port (default: $CHAT_PORT_DEFAULT)
-  -i INFO_PORT : Info port (default: $INFO_PORT_DEFAULT)
-  -d DOMAIN    : Domain for Nginx/Certbot (optional)
+${C_BOLD}Usage:${C_RESET} $0 -a ADMIN_KEYS [-c CHAT_PORT] [-i INFO_PORT] [-d DOMAIN]
+
+  -a ADMIN_KEYS  Comma-separated admin keys (MANDATORY)
+  -c CHAT_PORT   Chat port (default: $CHAT_PORT_DEFAULT)
+  -i INFO_PORT   Info/HTTP port (default: $INFO_PORT_DEFAULT)
+  -d DOMAIN      Domain for Nginx/Certbot (optional)
+
+${C_DIM}Example:${C_RESET}
+  sudo bash $0 -a key1,key2 -d chat.example.com -c 3000 -i 3330
 USAGE
   exit 1
 }
 
+###############################################################################
+#                                  HELPERS                                     #
+###############################################################################
 log_hdr() {
-  echo "### $1..."
+  head2 "Step $1: ${STEPS[$1]}"
 }
 
 run_as_user_with_nvm() {
-  # Runs arbitrary command as the app user with NVM environment loaded.
-  # Usage: run_as_user_with_nvm "your commands"
+  # Runs arbitrary command as the app user with NVM loaded.
+  # Usage: run_as_user_with_nvm "commands"
   local cmd="$*"
   sudo -u "$RUN_AS_USER" -i bash -lc "
     set -Eeuo pipefail
@@ -67,22 +103,28 @@ run_as_user_with_nvm() {
 run_step() {
   local step_num=$1; shift
   local cmd="$*"
-  log_hdr "Step $step_num: ${STEPS[$step_num]}"
+  log_hdr "$step_num"
   if eval "$cmd" >> "$LOG_FILE" 2>&1; then
-    STATUS[$step_num]="SUCCESS"
+    STATUS[$step_num]="${C_GREEN}SUCCESS${C_RESET}"
+    ok "Status: SUCCESS"
   else
-    STATUS[$step_num]="FAILED"
+    STATUS[$step_num]="${C_RED}FAILED${C_RESET}"
+    err "Status: FAILED (see $LOG_FILE)"
   fi
-  echo "--- Status: ${STATUS[$step_num]}"
 }
 
-# --- Initial Setup ---
-echo "Starting installation. Logging to $LOG_FILE"
-: > "$LOG_FILE" # truncate
-echo "Running as: $RUN_AS_USER" | tee -a "$LOG_FILE"
-echo "User home: $USER_HOME"   | tee -a "$LOG_FILE"
+###############################################################################
+#                              INITIAL SETUP                                   #
+###############################################################################
+head1 "simple-tor-chat installer"
+info "Logging to: $LOG_FILE"
+: > "$LOG_FILE"
+info "Running as: $RUN_AS_USER"
+info "User home : $USER_HOME"
+echo "Running as: $RUN_AS_USER"   >> "$LOG_FILE"
+echo "User home : $USER_HOME"     >> "$LOG_FILE"
 
-# --- Argument Parsing ---
+# Parse args
 while getopts ":c:i:d:a:" opt; do
   case ${opt} in
     c) CHAT_PORT=$OPTARG ;;
@@ -98,11 +140,13 @@ INFO_PORT=${INFO_PORT:-$INFO_PORT_DEFAULT}
 DOMAIN=${DOMAIN:-$DOMAIN_DEFAULT}
 
 if [ -z "$ADMIN_KEYS" ]; then
-  echo "Error: -a ADMIN_KEYS is mandatory." | tee -a "$LOG_FILE"
+  err "Error: -a ADMIN_KEYS is mandatory."
   usage
 fi
 
-# --- Script ---
+###############################################################################
+#                                   SCRIPT                                     #
+###############################################################################
 
 # Step 1: System Update
 run_step 1 "sudo apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
@@ -110,8 +154,8 @@ run_step 1 "sudo apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-ge
 # Step 2: Dependencies
 run_step 2 "sudo apt-get install -y nginx git tor curl ufw"
 
-# Step 3: Node via NVM (install NVM if missing, install default LTS)
-log_hdr "Step 3: ${STEPS[3]}"
+# Step 3: Node via NVM
+log_hdr "3"
 {
   export NVM_DIR="$USER_HOME/.nvm"
   if [ ! -d "$NVM_DIR" ]; then
@@ -120,27 +164,23 @@ log_hdr "Step 3: ${STEPS[3]}"
   else
     echo "NVM already present at $NVM_DIR"
   fi
-
-  # Install/Use LTS as default for now (repo-specific .nvmrc handled later in Step 6)
   run_as_user_with_nvm "nvm install --lts && nvm alias default 'lts/*' && nvm use default"
   run_as_user_with_nvm "node -v && npm -v"
-  STATUS[3]="SUCCESS"
-} >> "$LOG_FILE" 2>&1 || STATUS[3]="FAILED"
-echo "--- Status: ${STATUS[3]}"
+  STATUS[3]="${C_GREEN}SUCCESS${C_RESET}"
+} >> "$LOG_FILE" 2>&1 || STATUS[3]="${C_RED}FAILED${C_RESET}"
+[ "${STATUS[3]}" = "${C_RED}FAILED${C_RESET}" ] && err "Status: FAILED (see $LOG_FILE)" || ok "Status: SUCCESS"
 
 # Step 4: Configure Tor Hidden Service
-log_hdr "Step 4: ${STEPS[4]}"
+log_hdr "4"
 {
   TORRC="/etc/tor/torrc"
   TS="$(date +%Y%m%d-%H%M%S)"
   sudo cp -a "$TORRC" "$TORRC.bak.$TS" 2>/dev/null || true
 
-  # Ensure HiddenServiceDir exists and has correct ownership/permissions
   sudo mkdir -p /var/lib/tor/hidden_service
   sudo chown -R debian-tor:debian-tor /var/lib/tor/hidden_service
   sudo chmod 700 /var/lib/tor/hidden_service
 
-  # Idempotently add our block (if not already present)
   if ! grep -q "# --- simple-tor-chat ---" "$TORRC"; then
     sudo tee -a "$TORRC" >/dev/null <<EOF
 
@@ -161,21 +201,24 @@ EOF
     if sudo test -f "$HOSTNAME_FILE"; then
       ONION_LINK="$(sudo cat "$HOSTNAME_FILE")"
       echo "Tor Onion Service Address: http://$ONION_LINK"
-      STATUS[4]="SUCCESS"
+      STEP4_OK=1
       break
     fi
     sleep 1
   done
-  if [ "${STATUS[4]}" != "SUCCESS" ]; then
+  if [ -n "${STEP4_OK:-}" ]; then
+    STATUS[4]="${C_GREEN}SUCCESS${C_RESET}"
+  else
     echo "Timed out waiting for $HOSTNAME_FILE"
-    STATUS[4]="FAILED (Timeout)"
+    STATUS[4]="${C_RED}FAILED (Timeout)${C_RESET}"
   fi
 } >> "$LOG_FILE" 2>&1
-echo "--- Status: ${STATUS[4]}"
+[[ "${STATUS[4]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: ${STATUS[4]} (see $LOG_FILE)"
 
 # Step 5: Clone/Update repository
-log_hdr "Step 5: ${STEPS[5]}"
+log_hdr "5"
 {
+  TS="$(date +%Y%m%d-%H%M%S)"
   if [ ! -d "$APP_DIR" ]; then
     sudo mkdir -p "$(dirname "$APP_DIR")"
     sudo git clone "$REPO_URL" "$APP_DIR"
@@ -192,21 +235,19 @@ log_hdr "Step 5: ${STEPS[5]}"
     fi
   fi
   sudo chown -R "$RUN_AS_USER:$RUN_AS_USER" "$APP_DIR"
-  STATUS[5]="SUCCESS ($ACTION)"
-} >> "$LOG_FILE" 2>&1 || STATUS[5]="FAILED"
-echo "--- Status: ${STATUS[5]}"
+  STATUS[5]="${C_GREEN}SUCCESS${C_RESET} (${ACTION})"
+} >> "$LOG_FILE" 2>&1 || STATUS[5]="${C_RED}FAILED${C_RESET}"
+[[ "${STATUS[5]}" =~ SUCCESS ]] && ok "Status: ${STATUS[5]}" || err "Status: FAILED (see $LOG_FILE)"
 
 # Step 6: Configure application (Node version, deps, .env)
-log_hdr "Step 6: ${STEPS[6]}"
+log_hdr "6"
 {
-  # If repo defines .nvmrc, respect it for this project
   if run_as_user_with_nvm "test -f '$APP_DIR/.nvmrc'"; then
     run_as_user_with_nvm "cd '$APP_DIR' && nvm install && nvm use"
   else
     run_as_user_with_nvm "nvm use default"
   fi
 
-  # Install deps: prefer npm ci if lockfile present
   if run_as_user_with_nvm "test -f '$APP_DIR/package-lock.json'"; then
     run_as_user_with_nvm "cd '$APP_DIR' && npm ci"
   else
@@ -214,7 +255,6 @@ log_hdr "Step 6: ${STEPS[6]}"
     run_as_user_with_nvm "cd '$APP_DIR' && npm install"
   fi
 
-  # Compose .env content
   : "${ONION_LINK:=}"
   ENV_ONION=""
   if [ -n "$ONION_LINK" ]; then
@@ -223,7 +263,6 @@ log_hdr "Step 6: ${STEPS[6]}"
     echo "WARNING: ONION_LINK is empty (Tor step likely failed). Proceeding anyway."
   fi
 
-  # Write .env safely as app user (heredoc, no expansion inside)
   run_as_user_with_nvm "cd '$APP_DIR' && cat > .env <<'ENVEOF'
 CHAT_PORT=$CHAT_PORT
 INFO_PORT=$INFO_PORT
@@ -231,42 +270,54 @@ ONION_LINK=$ENV_ONION
 ADMIN_KEYS=$ADMIN_KEYS
 ENVEOF
 "
-  STATUS[6]="SUCCESS"
-} >> "$LOG_FILE" 2>&1 || STATUS[6]="FAILED"
-echo "--- Status: ${STATUS[6]}"
+  STATUS[6]="${C_GREEN}SUCCESS${C_RESET}"
+} >> "$LOG_FILE" 2>&1 || STATUS[6]="${C_RED}FAILED${C_RESET}"
+[[ "${STATUS[6]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: FAILED (see $LOG_FILE)"
 
 # Step 7: Start app with PM2, enable autostart, optional healthcheck
-log_hdr "Step 7: ${STEPS[7]}"
+log_hdr "7"
 {
   run_as_user_with_nvm "command -v pm2 >/dev/null || npm i -g pm2"
 
-  # Start/reload
-  run_as_user_with_nvm "cd '$APP_DIR' && (pm2 reload simple-chat || pm2 start server.js --name simple-chat)"
+  # Detect entrypoint: prefer npm start, else server.js/app.js/index.js
+  HAS_NPM_START=$(run_as_user_with_nvm "cd '$APP_DIR' && [ -f package.json ] && grep -q '\"start\"[[:space:]]*:' package.json && echo yes || echo no")
+  if [ "$HAS_NPM_START" = "yes" ]; then
+    run_as_user_with_nvm "cd '$APP_DIR' && (pm2 reload simple-chat || pm2 start npm --name simple-chat -- start)"
+  else
+    ENTRY=""
+    run_as_user_with_nvm "[ -f '$APP_DIR/server.js' ]" && ENTRY="server.js" || true
+    if [ -z "$ENTRY" ]; then run_as_user_with_nvm "[ -f '$APP_DIR/app.js' ]" && ENTRY="app.js" || true; fi
+    if [ -z "$ENTRY" ]; then run_as_user_with_nvm "[ -f '$APP_DIR/index.js' ]" && ENTRY="index.js" || true; fi
+    if [ -n "$ENTRY" ]; then
+      run_as_user_with_nvm "cd '$APP_DIR' && (pm2 reload simple-chat || pm2 start '$ENTRY' --name simple-chat)"
+    else
+      echo "ERROR: No entrypoint found (server.js/app.js/index.js) and no 'npm start'."
+      false
+    fi
+  fi
+
   run_as_user_with_nvm "pm2 save"
 
-  # Setup PM2 to start on boot (systemd)
-  # pm2 prints a command we should run as root; capture and execute safely.
+  # PM2 autostart
   STARTUP_CMD=$(run_as_user_with_nvm "pm2 startup systemd -u '$RUN_AS_USER' --hp '$USER_HOME'" | tail -n 1)
   if echo "$STARTUP_CMD" | grep -q "sudo"; then
-    # Execute the printed command
     eval "$STARTUP_CMD"
   else
-    # Fallback: run explicitly
     sudo env PATH=$PATH pm2 startup systemd -u "$RUN_AS_USER" --hp "$USER_HOME"
   fi
 
-  # Optional healthcheck (won't fail the step)
+  # Optional healthcheck (not blocking)
   if command -v curl >/dev/null; then
     curl -fsS "http://127.0.0.1:$INFO_PORT/health" >/dev/null 2>&1 && echo "Healthcheck: OK" || echo "Healthcheck: not available (ignored)"
   fi
 
-  STATUS[7]="SUCCESS"
-} >> "$LOG_FILE" 2>&1 || STATUS[7]="FAILED"
-echo "--- Status: ${STATUS[7]}"
+  STATUS[7]="${C_GREEN}SUCCESS${C_RESET}"
+} >> "$LOG_FILE" 2>&1 || STATUS[7]="${C_RED}FAILED${C_RESET}"
+[[ "${STATUS[7]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: FAILED (see $LOG_FILE)"
 
 # Step 8: Nginx config (if DOMAIN provided)
 if [ -n "$DOMAIN" ]; then
-  log_hdr "Step 8: ${STEPS[8]}"
+  log_hdr "8"
   {
     NGINX_PATH="/etc/nginx/sites-available/$DOMAIN"
     TS="$(date +%Y%m%d-%H%M%S)"
@@ -274,13 +325,11 @@ if [ -n "$DOMAIN" ]; then
       sudo cp -a "$NGINX_PATH" "$NGINX_PATH.bak.$TS"
     fi
 
-    # Serve INFO_PORT at / ; websockets/upgrade headers included; add common proxy headers
     sudo tee "$NGINX_PATH" >/dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
 
-    # Redirect /.well-known/acme-challenge to nginx root for Certbot (nginx plugin manages this)
     location /.well-known/acme-challenge/ { root /var/www/html; allow all; }
 
     location / {
@@ -297,7 +346,7 @@ server {
         proxy_send_timeout 60s;
     }
 
-    # Optional path to Chat server (if you want direct access on /chat)
+    # Optional subpath to Chat:
     location /chat/ {
         rewrite ^/chat/?(.*)$ /\$1 break;
         proxy_pass http://127.0.0.1:$CHAT_PORT;
@@ -321,32 +370,31 @@ EOF
     sudo ln -sf "$NGINX_PATH" "/etc/nginx/sites-enabled/$DOMAIN"
     sudo nginx -t
     sudo systemctl restart nginx
-    STATUS[8]="SUCCESS"
-  } >> "$LOG_FILE" 2>&1 || STATUS[8]="FAILED"
-  echo "--- Status: ${STATUS[8]}"
+    STATUS[8]="${C_GREEN}SUCCESS${C_RESET}"
+  } >> "$LOG_FILE" 2>&1 || STATUS[8]="${C_RED}FAILED${C_RESET}"
+  [[ "${STATUS[8]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: FAILED (see $LOG_FILE)"
 else
-  STATUS[8]="SKIPPED (No domain provided)"
-  echo "--- Status: ${STATUS[8]}"
+  STATUS[8]="${C_DIM}SKIPPED (No domain provided)${C_RESET}"
+  warn "Status: SKIPPED (No domain provided)"
 fi
 
-# Step 9: UFW rules (safe for SSH)
-log_hdr "Step 9: ${STEPS[9]}"
+# Step 9: UFW rules
+log_hdr "9"
 {
   sudo ufw allow 'OpenSSH' || sudo ufw allow 22/tcp
   if [ -n "$DOMAIN" ]; then
     sudo ufw allow 'Nginx Full' || { sudo ufw allow 80/tcp; sudo ufw allow 443/tcp; }
   else
-    # No domain: still open 80 for potential local reverse proxy, optional
     sudo ufw allow 80/tcp || true
   fi
   sudo ufw --force enable
-  STATUS[9]="SUCCESS"
-} >> "$LOG_FILE" 2>&1 || STATUS[9]="FAILED"
-echo "--- Status: ${STATUS[9]}"
+  STATUS[9]="${C_GREEN}SUCCESS${C_RESET}"
+} >> "$LOG_FILE" 2>&1 || STATUS[9]="${C_RED}FAILED${C_RESET}"
+[[ "${STATUS[9]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: FAILED (see $LOG_FILE)"
 
-# Step 10: Certbot (if DOMAIN provided)
+# Step 10: Certbot
 if [ -n "$DOMAIN" ]; then
-  log_hdr "Step 10: ${STEPS[10]}"
+  log_hdr "10"
   {
     if ! command -v certbot >/dev/null 2>&1; then
       sudo apt-get install -y certbot python3-certbot-nginx
@@ -362,34 +410,35 @@ if [ -n "$DOMAIN" ]; then
       CB_STATE+="cert exists"
     fi
 
-    STATUS[10]="SUCCESS ($CB_STATE)"
-  } >> "$LOG_FILE" 2>&1 || STATUS[10]="FAILED"
-  echo "--- Status: ${STATUS[10]}"
+    STATUS[10]="${C_GREEN}SUCCESS${C_RESET} (${CB_STATE})"
+  } >> "$LOG_FILE" 2>&1 || STATUS[10]="${C_RED}FAILED${C_RESET}"
+  [[ "${STATUS[10]}" =~ SUCCESS ]] && ok "Status: SUCCESS" || err "Status: FAILED (see $LOG_FILE)"
 else
-  STATUS[10]="SKIPPED (No domain provided)"
-  echo "--- Status: ${STATUS[10]}"
+  STATUS[10]="${C_DIM}SKIPPED (No domain provided)${C_RESET}"
+  warn "Status: SKIPPED (No domain provided)"
 fi
 
-# --- Final Summary ---
+###############################################################################
+#                               FINAL SUMMARY                                  #
+###############################################################################
 echo
-echo "========================================"
-echo " Installation Summary"
-echo "========================================"
+head1 "Installation Summary"
 FAILED_ANY=0
 for i in $(seq 1 10); do
-  printf "Step %-2s: %-28s -> %s\n" "$i" "${STEPS[$i]}" "${STATUS[$i]}"
-  if [[ "${STATUS[$i]}" == FAILED* ]]; then FAILED_ANY=1; fi
+  printf "%-6s %-30s -> %b\n" "Step $i:" "${STEPS[$i]}" "${STATUS[$i]}"
+  # crude check for the word FAILED in colorized status:
+  if [[ "${STATUS[$i]}" == *"FAILED"* ]]; then FAILED_ANY=1; fi
 done
 echo "----------------------------------------"
 
-# PM2 status
-APP_STATUS_RAW=$(run_as_user_with_nvm "pm2 describe simple-chat 2>/dev/null | grep -m1 'status'" || echo "status: not_found")
-APP_STATUS=$(echo "$APP_STATUS_RAW" | awk -F'│' '{gsub(/ /,\"\"); print \$4}' | tr -d '[:space:]')
-if [[ -z "$APP_STATUS" || "$APP_STATUS" == "not_found" ]]; then
-  echo "Application Status: NOT RUNNING"
-else
-  echo "Application Status: $APP_STATUS"
+# PM2 status (robust ASCII parsing)
+APP_STATUS=$(run_as_user_with_nvm \
+  "pm2 show simple-chat 2>/dev/null | awk -F: '/status/ {gsub(/^[ \t]+|[ \t]+$/,\"\",\$2); print \$2; exit}'" \
+  || echo "")
+if [[ -z "$APP_STATUS" ]]; then
+  APP_STATUS="NOT RUNNING"
 fi
+printf "%s %b\n" "Application Status:" "$( [[ "$APP_STATUS" =~ [Oo]nline ]] && echo "${C_GREEN}$APP_STATUS${C_RESET}" || echo "${C_RED}$APP_STATUS${C_RESET}" )"
 
 # URLs
 if [ -n "$ONION_LINK" ]; then
@@ -400,13 +449,20 @@ fi
 if [ -n "$DOMAIN" ]; then
   echo "Domain URL: https://$DOMAIN"
 fi
+
 echo "========================================"
 echo "Full log: $LOG_FILE"
 
-# If anything failed, show last 120 lines of log to console
+# If anything failed, tail install log
 if [[ $FAILED_ANY -eq 1 ]]; then
   echo
-  echo "---- Tail of log (last 120 lines) ----"
+  head2 "Tail of install log (last 120 lines)"
   tail -n 120 "$LOG_FILE" || true
-  echo "--------------------------------------"
+fi
+
+# If app is not online, show last PM2 logs for quick DX
+if [[ ! "$APP_STATUS" =~ [Oo]nline ]]; then
+  echo
+  head2 "PM2 logs (last 80 lines)"
+  run_as_user_with_nvm "pm2 logs simple-chat --lines 80 --nostream" || true
 fi
