@@ -1,5 +1,5 @@
 #!/bin/bash
-# simple-tor-chat installer (idempotent, color DX)
+# simple-tor-chat installer (full 10 steps, idempotent, DX)
 
 ###############################################################################
 # CONFIG
@@ -22,7 +22,6 @@ else
   C_RESET=""; C_DIM=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_BLUE=""
   C_MAGENTA=""; C_CYAN=""; C_BOLD=""
 fi
-
 say()   { printf "%b%s%b\n" "$1" "$2" "$C_RESET"; }
 info()  { say "$C_CYAN"    "$1"; }
 ok()    { say "$C_GREEN"   "$1"; }
@@ -50,7 +49,7 @@ declare -A STATUS
 for i in ${!STEPS[@]}; do STATUS[$i]="SKIPPED"; done
 
 ###############################################################################
-# USER DETECTION
+# USER
 ###############################################################################
 if [ -n "$SUDO_USER" ]; then
   RUN_AS_USER=$SUDO_USER
@@ -68,17 +67,12 @@ usage() {
   echo -e "${C_BOLD}Usage:${C_RESET} $0 -a ADMIN_KEYS [-c CHAT_PORT] [-i INFO_PORT] [-d DOMAIN]"
   exit 1
 }
-
 log_hdr() { head2 "Step $1: ${STEPS[$1]}"; }
-
 run_as_user_with_nvm() {
   local cmd="$*"
   sudo -u "$RUN_AS_USER" -i bash -lc "
     export NVM_DIR=\"$NVM_DIR\"
-    if [ ! -s \"\$NVM_DIR/nvm.sh\" ]; then
-      echo 'ERROR: NVM not found at' \"\$NVM_DIR/nvm.sh\" >&2
-      exit 127
-    fi
+    [ -s \"\$NVM_DIR/nvm.sh\" ] || { echo 'NVM not found at' \"\$NVM_DIR/nvm.sh\"; exit 127; }
     . \"\$NVM_DIR/nvm.sh\"
     $cmd
   "
@@ -102,8 +96,10 @@ DOMAIN=${DOMAIN:-$DOMAIN_DEFAULT}
 if [ -z "$ADMIN_KEYS" ]; then err "Error: -a ADMIN_KEYS required"; usage; fi
 
 ###############################################################################
-# STEPS
+# START
 ###############################################################################
+head1 "simple-tor-chat installer"
+: >"$LOG_FILE"
 
 # Step 1
 log_hdr 1
@@ -112,10 +108,10 @@ sudo apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
 # Step 2
 log_hdr 2
-sudo apt-get install -y nginx git tor curl ufw \
+sudo apt-get install -y nginx git tor curl ufw certbot python3-certbot-nginx \
   >>"$LOG_FILE" 2>&1 && STATUS[2]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[2]="${C_RED}FAILED${C_RESET}"
 
-# Step 3
+# Step 3: NVM/Node
 log_hdr 3
 {
   if [ ! -d "$NVM_DIR" ]; then
@@ -127,7 +123,7 @@ log_hdr 3
   run_as_user_with_nvm "node -v && npm -v"
 } >>"$LOG_FILE" 2>&1 && STATUS[3]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[3]="${C_RED}FAILED${C_RESET}"
 
-# Step 4 (Tor)
+# Step 4: Tor
 log_hdr 4
 {
   sudo mkdir -p /var/lib/tor/hidden_service
@@ -149,7 +145,7 @@ EOF
   ONION_LINK=$(sudo cat /var/lib/tor/hidden_service/hostname 2>/dev/null || true)
 } >>"$LOG_FILE" 2>&1 && STATUS[4]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[4]="${C_RED}FAILED${C_RESET}"
 
-# Step 5 (Repo)
+# Step 5: Repo
 log_hdr 5
 {
   if [ ! -d "$APP_DIR/.git" ]; then
@@ -161,7 +157,7 @@ log_hdr 5
   sudo chown -R "$RUN_AS_USER:$RUN_AS_USER" "$APP_DIR"
 } >>"$LOG_FILE" 2>&1 && STATUS[5]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[5]="${C_RED}FAILED${C_RESET}"
 
-# Step 6 (.env + deps)
+# Step 6: App config
 log_hdr 6
 {
   if run_as_user_with_nvm "test -f '$APP_DIR/package-lock.json'"; then
@@ -177,7 +173,7 @@ ADMIN_KEYS=$ADMIN_KEYS
 EOF
 } >>"$LOG_FILE" 2>&1 && STATUS[6]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[6]="${C_RED}FAILED${C_RESET}"
 
-# Step 7 (PM2)
+# Step 7: PM2
 log_hdr 7
 {
   run_as_user_with_nvm "command -v pm2 >/dev/null || npm i -g pm2"
@@ -191,22 +187,72 @@ log_hdr 7
   run_as_user_with_nvm "pm2 save"
 } >>"$LOG_FILE" 2>&1 && STATUS[7]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[7]="${C_RED}FAILED${C_RESET}"
 
-# Step 8, 9, 10 (nginx, ufw, certbot) – zostawię jak w poprzedniej wersji dla krótszej odpowiedzi.
+# Step 8: Nginx
+log_hdr 8
+if [ -n "$DOMAIN" ]; then
+  {
+    NGINX_PATH="/etc/nginx/sites-available/$DOMAIN"
+    sudo tee "$NGINX_PATH" >/dev/null <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$INFO_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+    sudo ln -sf "$NGINX_PATH" /etc/nginx/sites-enabled/
+    sudo nginx -t && sudo systemctl restart nginx
+  } >>"$LOG_FILE" 2>&1 && STATUS[8]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[8]="${C_RED}FAILED${C_RESET}"
+else
+  STATUS[8]="${C_DIM}SKIPPED${C_RESET}"
+fi
+
+# Step 9: UFW
+log_hdr 9
+{
+  sudo ufw allow 'OpenSSH' || sudo ufw allow 22/tcp
+  [ -n "$DOMAIN" ] && sudo ufw allow 'Nginx Full' || sudo ufw allow 80/tcp
+  sudo ufw --force enable
+} >>"$LOG_FILE" 2>&1 && STATUS[9]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[9]="${C_RED}FAILED${C_RESET}"
+
+# Step 10: Certbot
+log_hdr 10
+if [ -n "$DOMAIN" ]; then
+  {
+    if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+      sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@$DOMAIN"
+    fi
+  } >>"$LOG_FILE" 2>&1 && STATUS[10]="${C_GREEN}SUCCESS${C_RESET}" || STATUS[10]="${C_RED}FAILED${C_RESET}"
+else
+  STATUS[10]="${C_DIM}SKIPPED${C_RESET}"
+fi
 
 ###############################################################################
 # SUMMARY
 ###############################################################################
 head1 "Installation Summary"
 for i in $(seq 1 10); do
-  printf "%-6s %-30s -> %b\n" "Step $i:" "${STEPS[$i]}" "${STATUS[$i]}"
+  printf "%-6s %-28s -> %b\n" "Step $i:" "${STEPS[$i]}" "${STATUS[$i]}"
 done
 APP_STATUS=$(run_as_user_with_nvm \
   "pm2 show simple-chat 2>/dev/null | awk -F: '/status/ {gsub(/^[ \t]+|[ \t]+$/,\"\",\$2); print \$2; exit}'" \
   || echo "")
 [ -z "$APP_STATUS" ] && APP_STATUS="NOT RUNNING"
 echo -e "Application Status: $APP_STATUS"
-echo "Onion URL: http://$ONION_LINK"
+[ -n "$ONION_LINK" ] && echo "Onion URL: http://$ONION_LINK"
+[ -n "$DOMAIN" ] && echo "Domain URL: https://$DOMAIN"
 echo "Full log: $LOG_FILE"
+
 if [[ "$APP_STATUS" != "online" ]]; then
-  run_as_user_with_nvm "pm2 logs simple-chat --lines 50 --nostream" || true
+  head2 "PM2 logs (last 80 lines)"
+  run_as_user_with_nvm "pm2 logs simple-chat --lines 80 --nostream" || true
 fi
