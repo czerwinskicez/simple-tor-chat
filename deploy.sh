@@ -79,7 +79,7 @@ run_as_user_with_nvm "nvm install --lts"
 echo "### Step 4: Configuring Tor..."
 sudo tee /etc/tor/torrc > /dev/null <<EOF
 HiddenServiceDir /var/lib/tor/hidden_service/
-HiddenServicePort 80 127.0.0.1:$INFO_PORT
+HiddenServicePort 80 127.0.0.1:$CHAT_PORT
 EOF
 sudo systemctl restart tor
 sleep 5 # Wait for hostname file to be created
