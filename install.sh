@@ -96,8 +96,31 @@ run_step 1 "sudo apt update && sudo apt upgrade -y"
 run_step 2 "sudo apt install -y nginx git tor"
 
 # Step 3: Install Node.js (via NVM)
-CMD="if [ ! -d \"$USER_HOME/.nvm\" ]; then sudo -u \"$RUN_AS_USER\" -i -- bash -c \"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash\"; fi && run_as_user_with_nvm \"nvm install --lts\""
-run_step 3 "$CMD"
+# Step 3: Install Node.js (via NVM)
+echo "### Step 3: ${STEPS[3]}..."
+{
+    STEP_3_DETAIL=""
+    if [ ! -d "$USER_HOME/.nvm" ]; then
+        sudo -u "$RUN_AS_USER" -i -- bash -c "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+        STEP_3_DETAIL="NVM installed"
+    else
+        STEP_3_DETAIL="NVM exists"
+    fi
+
+    if ! run_as_user_with_nvm "nvm list | grep -q 'lts'"; then
+        run_as_user_with_nvm "nvm install --lts"
+        STEP_3_DETAIL+=", Node LTS installed"
+    else
+        STEP_3_DETAIL+=", Node LTS exists"
+    fi
+
+    if [ $? -eq 0 ]; then
+        STATUS[3]="SUCCESS ($STEP_3_DETAIL)"
+    else
+        STATUS[3]="FAILED"
+    fi
+} >> "$LOG_FILE" 2>&1
+echo "--- Status: ${STATUS[3]}"
 
 # Step 4: Configure Tor
 echo "### Step 4: ${STEPS[4]}..."
@@ -132,8 +155,27 @@ echo "--- Status: ${STATUS[4]}"
 
 
 # Step 5: Clone repository
-CMD="if [ ! -d \"$APP_DIR\" ]; then sudo git clone \"$REPO_URL\" \"$APP_DIR\"; else cd \"$APP_DIR\" && sudo git pull; fi && sudo chown -R \"$RUN_AS_USER:$RUN_AS_USER\" \"$APP_DIR\""
-run_step 5 "$CMD"
+# Step 5: Clone repository
+echo "### Step 5: ${STEPS[5]}..."
+{
+    STEP_5_DETAIL=""
+    if [ ! -d "$APP_DIR" ]; then
+        sudo git clone "$REPO_URL" "$APP_DIR"
+        STEP_5_DETAIL="Cloned"
+    else
+        cd "$APP_DIR"
+        sudo git pull
+        STEP_5_DETAIL="Pulled"
+    fi
+    sudo chown -R "$RUN_AS_USER:$RUN_AS_USER" "$APP_DIR"
+
+    if [ $? -eq 0 ]; then
+        STATUS[5]="SUCCESS ($STEP_5_DETAIL)"
+    else
+        STATUS[5]="FAILED"
+    fi
+} >> "$LOG_FILE" 2>&1
+echo "--- Status: ${STATUS[5]}"
 
 # Step 6: Configure application
 echo "### Step 6: ${STEPS[6]}..."
@@ -158,8 +200,32 @@ ADMIN_KEYS=$ADMIN_KEYS"
 echo "--- Status: ${STATUS[6]}"
 
 # Step 7: Start application with PM2
-CMD="run_as_user_with_nvm \"npm install pm2 -g && cd \\\"$APP_DIR\\\" && (pm2 reload simple-chat || pm2 start server.js --name simple-chat)\" && run_as_user_with_nvm \"pm2 save\""
-run_step 7 "$CMD"
+# Step 7: Start application with PM2
+echo "### Step 7: ${STEPS[7]}..."
+{
+    STEP_7_DETAIL=""
+    if ! run_as_user_with_nvm "command -v pm2 &>/dev/null"; then
+        echo "PM2 not found. Installing..."
+        run_as_user_with_nvm "npm install pm2 -g"
+        STEP_7_DETAIL="Installed"
+    else
+        echo "PM2 already installed."
+        STEP_7_DETAIL="Already exists"
+    fi
+
+    # Start or reload the application
+    run_as_user_with_nvm "cd \"$APP_DIR\" && (pm2 reload simple-chat || pm2 start server.js --name simple-chat)"
+    
+    # Save the process list
+    run_as_user_with_nvm "pm2 save"
+
+    if [ $? -eq 0 ]; then
+        STATUS[7]="SUCCESS ($STEP_7_DETAIL)"
+    else
+        STATUS[7]="FAILED"
+    fi
+} >> "$LOG_FILE" 2>&1
+echo "--- Status: ${STATUS[7]}"
 
 # Step 8: Configure Nginx
 if [ -n "$DOMAIN" ]; then
@@ -199,9 +265,36 @@ echo "### Step 9: ${STEPS[9]}..."
 echo "--- Status: ${STATUS[9]}"
 
 # Step 10: Configure SSL with Certbot
+# Step 10: Configure SSL with Certbot
 if [ -n "$DOMAIN" ]; then
-    CMD="sudo apt install -y certbot python3-certbot-nginx && sudo certbot --nginx -d \"$DOMAIN\" --non-interactive --agree-tos -m \"admin@$DOMAIN\""
-    run_step 10 "$CMD"
+    echo "### Step 10: ${STEPS[10]}..."
+    {
+        STEP_10_DETAIL=""
+        if ! command -v certbot &>/dev/null; then
+            echo "Certbot not found. Installing..."
+            sudo apt install -y certbot python3-certbot-nginx
+            STEP_10_DETAIL="Installed, "
+        else
+            echo "Certbot already installed."
+            STEP_10_DETAIL="Exists, "
+        fi
+
+        if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+            echo "Certificate for $DOMAIN not found. Obtaining..."
+            sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@$DOMAIN"
+            STEP_10_DETAIL+="new cert created"
+        else
+            echo "Certificate for $DOMAIN already exists. Skipping."
+            STEP_10_DETAIL+="cert exists"
+        fi
+
+        if [ $? -eq 0 ]; then
+            STATUS[10]="SUCCESS ($STEP_10_DETAIL)"
+        else
+            STATUS[10]="FAILED"
+        fi
+    } >> "$LOG_FILE" 2>&1
+    echo "--- Status: ${STATUS[10]}"
 else
     STATUS[10]="SKIPPED (No domain provided)"
 fi

@@ -1,113 +1,83 @@
-# Very Simple Chat
+# Dokumentacja Aplikacji i Konfiguracji Nginx
 
-A real-time messaging application designed for privacy, accessible via the Tor network. It's built with Node.js, Express, and WebSockets, featuring a persistent SQLite database and a separate public-facing page with Tor access information.
+**Szczegółowe instrukcje dotyczące instalacji i wdrożenia znajdują się w pliku [INSTALL.md](INSTALL.md).**
 
-## Architecture Overview
+## 1. Aplikacja Node.js (`very-simple-chat`)
 
-The project consists of two distinct Node.js servers running within a single process:
+Aplikacja jest prostym czatem opartym na Node.js, zaprojektowanym z myślą o prostocie i minimalizmie. Składa się z dwóch głównych komponentów serwerowych.
 
-1.  **Chat Server**: The core real-time chat application, accessible exclusively through a Tor hidden service (`.onion` address). It handles WebSocket connections, message storage, and admin functionalities.
-2.  **Info Server**: A simple, public-facing web server that displays a page with information on how to access the chat via the Tor network. It provides the `.onion` link dynamically from environment variables.
+### Architektura
 
-A build process is in place to minify frontend assets (HTML, CSS, JS) from the `private/` directory and output them to the `public/` directory, which is then served by the applications.
+Aplikacja uruchamia dwa oddzielne serwery HTTP:
 
-## Features
+1.  **Serwer Informacyjny (Info Server)**:
+    *   **Port**: `3330` (konfigurowalny w pliku `.env` przez `INFO_PORT`).
+    *   **Cel**: Jest to punkt wejścia dla Nginx. Serwuje statyczną stronę `info.html`, która ma za zadanie wyświetlić link do właściwego czatu (prawdopodobnie w sieci Tor).
+    *   **Logika**: Odczytuje plik `public/info.html`, wstawia w nim link zdefiniowany w zmiennej środowiskowej `ONION_LINK` i serwuje go użytkownikowi.
 
-- **Tor-Exclusive Chat**: The main chat is designed to be accessed only as a Tor hidden service, enhancing user privacy.
-- **Real-time Messaging**: Instant message delivery using WebSockets (`ws`).
-- **Persistent Storage**: Messages are stored in a local SQLite database.
-- **Admin Moderation**: Admins can delete messages in real-time using a special URL parameter.
-- **Build Process**: Frontend assets are minified for production using `html-minifier-terser`, `terser`, and `clean-css`.
-- **Automated Deployment**: An `update.sh` script automates the deployment process on the server (fetching updates, installing dependencies, building, and reloading the app with PM2).
+2.  **Serwer Czatu (Chat Server)**:
+    *   **Port**: `3000` (konfigurowalny w pliku `.env` przez `CHAT_PORT`).
+    *   **Cel**: Obsługuje główną funkcjonalność czatu.
+    *   **Technologie**:
+        *   `express`: Do serwowania plików statycznych (`private/index.html`) i obsługi endpointów API.
+        *   `ws`: Do komunikacji w czasie rzeczywistym (WebSocket) między klientami.
+        *   `sqlite3`: Jako baza danych do przechowywania wiadomości. Plik bazy danych to `database.sqlite`.
+        *   `dotenv`: Do zarządzania zmiennymi środowiskowymi.
 
-## Tech Stack
+### Baza Danych
 
-- **Backend**: Node.js, Express.js, WebSocket (`ws`), SQLite3
-- **Frontend**: Vanilla HTML, CSS, and JavaScript
-- **Build Tools**: `html-minifier-terser`, `terser`, `clean-css`
-- **Environment**: `dotenv` for configuration management.
+Aplikacja używa bazy danych SQLite z jedną tabelą:
 
-## Project Structure
+*   **`messages`**:
+    *   `id` (INTEGER, PRIMARY KEY, AUTOINCREMENT)
+    *   `timestamp` (TEXT)
+    *   `nickname` (TEXT)
+    *   `message` (TEXT)
 
-```
-.
-├── dev/                # Source frontend files (unminified)
-│   ├── index.html
-│   └── info.html
-├── public/             # Built/minified public files (info page, assets)
-│   ├── index.html
-│   └── info.html
-├── database.sqlite     # SQLite database file
-├── .env                # Environment variables (not versioned)
-├── build.js            # Build script for minifying assets (builds dev -> public/private)
-├── server.js           # Main server logic for both apps (serves private/index.html at /)
-├── update.sh           # Deployment script for the server
-├── package.json
-└── README.md
-```
+### API i Funkcjonalność
 
-## Installation and Setup
+*   **WebSocket**: Po nawiązaniu połączenia, serwer przesyła nowe wiadomości do wszystkich podłączonych klientów. Obsługuje również komunikaty o usunięciu wiadomości.
+*   **Endpointy HTTP**:
+    *   `GET /`: Serwuje główny interfejs użytkownika czatu (`private/index.html`).
+    *   `GET /messages`: Zwraca historię wszystkich wiadomości z bazy danych w formacie JSON.
+    *   `POST /send-message`: Przyjmuje `nick` i `message`, zapisuje je do bazy danych, a następnie rozgłasza do wszystkich klientów przez WebSocket.
+    *   `POST /delete-message`: Umożliwia usunięcie wiadomości. Wymaga podania `messageId` oraz klucza administratora (`adminkey`), który jest weryfikowany z listą kluczy w zmiennej środowiskowej `ADMIN_KEYS`.
 
-1.  **Clone the repository:**
+---
+
+## 2. Konfiguracja Nginx
+
+Nginx jest używany jako odwrotne proxy (reverse proxy) przed aplikacją Node.js.
+
+### Plik Konfiguracyjny: `/etc/nginx/sites-enabled/onion.23.net.pl`
+
+*   **Domena**: `onion.23.net.pl`
+*   **Przekierowanie na HTTPS**: Wszystkie zapytania na porcie 80 (HTTP) są automatycznie przekierowywane na port 443 (HTTPS) z kodem 301.
+*   **SSL**: Szyfrowanie jest obsługiwane przez certyfikaty Let's Encrypt. Konfiguracja SSL jest zarządzana przez `certbot`.
+*   **Odwrotne Proxy**:
+    *   Wszystkie przychodzące zapytania do `onion.23.net.pl` są przekazywane do serwera informacyjnego aplikacji Node.js, działającego pod adresem `http://127.0.0.1:3330`.
+    *   Konfiguracja zawiera niezbędne nagłówki do obsługi **WebSockets** (`Upgrade` i `Connection`), co jest kluczowe dla działania czatu w czasie rzeczywistym, jeśli ruch do czatu również przechodziłby przez Nginx.
+    *   Przekazywane są również nagłówki `X-Real-IP` i `X-Forwarded-For`, aby aplikacja mogła zidentyfikować oryginalny adres IP klienta.
+
+---
+
+## 3. Konfiguracja Usługi Tor Onion
+
+Usługa Tor Onion Service jest skonfigurowana tak, aby wskazywać bezpośrednio na **Serwer Czatu** (port 3000). Dzięki temu użytkownicy sieci Tor mogą uzyskać bezpośredni dostęp do funkcji czatu, omijając serwer informacyjny.
+
+*   **Port docelowy**: `3000` (CHAT_PORT)
+*   **Dostęp**: Wyłącznie przez sieć Tor.
+
+---
+
+## 4. Wdrożenie i Uruchomienie
+
+Szczegółowe instrukcje dotyczące wdrożenia (zarówno automatycznego przy użyciu skryptu `install.sh`, jak i ręcznego) znajdują się w pliku [INSTALL.md](INSTALL.md).
+
+**Skrócona instrukcja automatyczna:**
+1.  Sklonuj repozytorium.
+2.  Nadaj uprawnienia do wykonania skryptu: `chmod +x install.sh`.
+3.  Uruchom skrypt z `sudo`, podając obowiązkowe klucze administratora:
     ```bash
-    git clone <repository-url>
-    cd very-simple-chat
+    sudo ./install.sh -a "klucz1,klucz2"
     ```
-
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-## Configuration
-
-1.  Create a `.env` file in the root directory.
-
-2.  Add the required environment variables to the `.env` file:
-
-    ```env
-    # Port for the chat server (Tor hidden service)
-    CHAT_PORT=3000
-
-    # Port for the public info page
-    INFO_PORT=3330
-
-    # The .onion address of your chat service
-    ONION_LINK=youronionaddress.onion
-
-    # Comma-separated list of keys for admin privileges
-    ADMIN_KEYS=secretkey1,admin123
-    ```
-
-## Usage
-
-### Development
-
-To run the application in a development environment (with automatic building):
-
-```bash
-npm run dev
-```
-
-This will first build the assets and then start the server.
-
-- The chat will be available at `http://localhost:3000` (or your `CHAT_PORT`).
-- The info page will be available at `http://localhost:3330` (or your `INFO_PORT`).
-
-### Production & Deployment
-
-The `update.sh` script is designed to automate deployment on a production server. It performs the following steps:
-1.  Navigates to the application directory.
-2.  Pulls the latest changes from the `origin/master` branch.
-3.  Installs dependencies with `npm install`.
-4.  Builds the frontend assets using `npm run build`.
-5.  Reloads the application using PM2 (`pm2 reload tor-hidden-chat`).
-6.  Cleans up untracked files.
-
-To use it, ensure you have PM2 installed and the application is already running under the name `tor-hidden-chat`.
-
-### Admin Features
-
-To access admin features (message deletion), append the `adminkey` query parameter to the chat URL with a valid key from your `.env` file.
-
-Example: `http://youronionaddress.onion?adminkey=secretkey1`
